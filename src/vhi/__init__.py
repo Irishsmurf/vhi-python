@@ -7,5 +7,5 @@ __all__ = [
     "VhiAuthenticationError",
     "VhiMfaRequiredError",
     "VhiApiError",
-    "ClaimStatement"
+    "ClaimStatement",
 ]
