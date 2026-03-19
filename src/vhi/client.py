@@ -1,5 +1,7 @@
 import requests
 import os
+import uuid
+import json
 from typing import Callable, Optional, List
 from .exceptions import VhiAuthenticationError, VhiMfaRequiredError, VhiApiError
 from .models import ClaimStatement
@@ -29,8 +31,10 @@ class VhiClient:
         
         # Default Browser Headers to mimic browser and avoid WAF
         self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+            "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
         })
         
         self.is_authenticated = False
@@ -52,14 +56,21 @@ class VhiClient:
         """
         Performs the login flow. Handles the MFA challenge if required.
         """
-        # Set proper fetch headers
+        # Set proper fetch headers mimicking trace exactly
         headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Origin": "https://www.vhi.ie",
-            "Referer": "https://www.vhi.ie/",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-site",
+            "accept": "application/json, text/plain, */*",
+            "accept-language": "en-IE,en-US;q=0.9,en;q=0.8,ja;q=0.7,en-GB;q=0.6,de;q=0.5",
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "dnt": "1",
+            "origin": "https://app.vhi.ie",
+            "pragma": "no-cache",
+            "priority": "u=1, i",
+            "referer": "https://app.vhi.ie/",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-site",
+            "user-session-id": str(uuid.uuid4())
         }
         
         payload = {
@@ -67,10 +78,13 @@ class VhiClient:
             "usercred": self.password
         }
         
+        # Format strictly without spaces to bypass strict WAF parsers
+        raw_payload = json.dumps(payload, separators=(',', ':'))
+        
         # 1. Primary Authentication
         login_url = f"{self.apis_base_url}/api/myvhilogin/login"
         
-        response = self.session.post(login_url, json=payload, headers=headers)
+        response = self.session.post(login_url, data=raw_payload, headers=headers)
         
         if response.status_code == 200:
             try:
@@ -103,7 +117,7 @@ class VhiClient:
         elif response.status_code == 401:
             raise VhiAuthenticationError("Invalid credentials provided.")
         else:
-            raise VhiApiError(f"Login failed with status {response.status_code}", status_code=response.status_code, response=response)
+            raise VhiApiError(f"Login failed with status {response.status_code}: {response.text}", status_code=response.status_code, response=response)
             
     def _handle_mfa_challenge(self, state_token: str, verify_url: str, base_headers: dict):
         """
