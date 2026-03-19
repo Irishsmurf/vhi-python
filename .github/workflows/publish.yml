@@ -8,7 +8,9 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      
     # Environment for PyPI trusted publishing
     environment:
       name: pypi
