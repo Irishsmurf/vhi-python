@@ -7,7 +7,7 @@ from vhi.exceptions import VhiAuthenticationError, VhiMfaRequiredError, VhiApiEr
 
 @responses.activate
 def test_login_success_no_mfa():
-    client = VhiClient("test@example.com", "password")
+    client = VhiClient("test@example.com", "password", cache_session=False)
     
     responses.add(
         responses.POST,
@@ -24,7 +24,7 @@ def test_login_requires_mfa_success():
     def mfa_callback():
         return "123456"
         
-    client = VhiClient("test@example.com", "password", mfa_callback=mfa_callback)
+    client = VhiClient("test@example.com", "password", mfa_callback=mfa_callback, cache_session=False)
     
     # Mock primary login returning 200 with MFA_REQUIRED
     responses.add(
@@ -51,7 +51,7 @@ def test_login_requires_mfa_success():
 
 @responses.activate
 def test_login_invalid_credentials():
-    client = VhiClient("test@example.com", "wrong")
+    client = VhiClient("test@example.com", "wrong", cache_session=False)
     
     responses.add(
         responses.POST,
@@ -64,7 +64,7 @@ def test_login_invalid_credentials():
 
 @responses.activate
 def test_get_claims_success():
-    client = VhiClient("test@example.com", "password")
+    client = VhiClient("test@example.com", "password", cache_session=False)
     client.is_authenticated = True # Mock existing session
     
     responses.add(
@@ -91,7 +91,7 @@ def test_get_claims_success():
 
 @responses.activate
 def test_download_document_success():
-    client = VhiClient("test@example.com", "password")
+    client = VhiClient("test@example.com", "password", cache_session=False)
     client.is_authenticated = True
     
     pdf_content = b"%PDF-1.4 mock pdf content"

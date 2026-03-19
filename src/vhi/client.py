@@ -2,6 +2,9 @@ import requests
 import os
 import uuid
 import json
+import pickle
+import hashlib
+from pathlib import Path
 from typing import Callable, Optional, List
 from .exceptions import VhiAuthenticationError, VhiMfaRequiredError, VhiApiError
 from .models import ClaimStatement
@@ -13,7 +16,7 @@ class VhiClient:
     """
     DEFAULT_CONFIG_URL = "https://www.vhi.ie/myvhi/myclaimstatements" # Usually embedded here
     
-    def __init__(self, username: str, password: str, mfa_callback: Optional[Callable[[], str]] = None):
+    def __init__(self, username: str, password: str, mfa_callback: Optional[Callable[[], str]] = None, cache_session: bool = True):
         """
         Initialize the VhiClient.
         
@@ -21,10 +24,12 @@ class VhiClient:
             username: User's email address.
             password: User's password.
             mfa_callback: A callable that returns the 2FA OTP string when invoked.
+            cache_session: Whether to cache session cookies locally to prevent re-authentication.
         """
         self.username = username
         self.password = password
         self.mfa_callback = mfa_callback
+        self.cache_session = cache_session
         
         # State management
         self.session = requests.Session()
@@ -39,6 +44,47 @@ class VhiClient:
         
         self.is_authenticated = False
         self.apis_base_url = "https://apis.vhi.ie" # Will be updated during discovery if necessary
+        
+    def _get_cache_path(self) -> Path:
+        user_hash = hashlib.md5(self.username.encode('utf-8')).hexdigest()
+        cache_dir = Path.home() / ".vhi"
+        cache_dir.mkdir(exist_ok=True)
+        return cache_dir / f"session_{user_hash}.pkl"
+        
+    def _save_session(self):
+        if not self.cache_session:
+            return
+        with open(self._get_cache_path(), 'wb') as f:
+            pickle.dump(self.session.cookies, f)
+            
+    def _load_session(self) -> bool:
+        if not self.cache_session:
+            return False
+        cache_path = self._get_cache_path()
+        if cache_path.exists():
+            try:
+                with open(cache_path, 'rb') as f:
+                    self.session.cookies = pickle.load(f)
+                return True
+            except Exception:
+                pass
+        return False
+        
+    def _is_session_valid(self) -> bool:
+        try:
+            url = f"{self.apis_base_url}/claims/v1/statements"
+            headers = {
+                "Accept": "application/json",
+                "Origin": "https://app.vhi.ie",
+                "Referer": "https://app.vhi.ie/",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-site",
+            }
+            # Only test to see if 401 is returned
+            response = self.session.get(url, headers=headers, timeout=5)
+            return response.status_code == 200
+        except Exception:
+            return False
         
     def _fetch_environment_config(self):
         """
@@ -56,6 +102,13 @@ class VhiClient:
         """
         Performs the login flow. Handles the MFA challenge if required.
         """
+        if self._load_session():
+            if self._is_session_valid():
+                self.is_authenticated = True
+                return
+            else:
+                self.session.cookies.clear()
+        
         # Set proper fetch headers mimicking trace exactly
         headers = {
             "accept": "application/json, text/plain, */*",
@@ -112,6 +165,7 @@ class VhiClient:
                 self._handle_mfa_challenge(state_token, verify_url, headers)
             else:
                 self.is_authenticated = True
+                self._save_session()
                 return
                 
         elif response.status_code == 401:
@@ -141,7 +195,7 @@ class VhiClient:
         
         if response.status_code == 200:
             self.is_authenticated = True
-            
+            self._save_session()
             # The session cookie jar has now been populated with the authorized session
             # Or we might need to extract a Bearer token. This implementation relies
             # on cookies being correctly set via Set-Cookie headers by the API.
