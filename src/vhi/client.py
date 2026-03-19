@@ -166,16 +166,22 @@ class VhiClient:
                     "stateToken"
                 )
 
-                # Attempt to extract the verify url from the first factor
+                # Attempt to extract the verify url from the factors array
                 try:
-                    factors = data.get("factors") or data.get("data", {}).get(
-                        "_embedded", {}
-                    ).get("factors", [])
-                    verify_url = factors[0]["_links"]["verify"]["href"]
-                except (IndexError, KeyError):
-                    # Fallback URL if extraction fails
-                    verify_url = (
-                        "https://admin-digital.vhi.ie/api/v1/authn/factors/verify"
+                    embedded_factors = (
+                        data.get("data", {}).get("_embedded", {}).get("factors", [])
+                    )
+                    root_factors = data.get("factors", [])
+                    factors = embedded_factors if embedded_factors else root_factors
+
+                    try:
+                        verify_url = factors[0]["_links"]["verify"]["href"]
+                    except KeyError:
+                        factor_id = factors[0]["id"]
+                        verify_url = f"https://admin-digital.vhi.ie/api/v1/authn/factors/{factor_id}/verify"
+                except (IndexError, KeyError) as e:
+                    raise VhiApiError(
+                        f"MFA required but could not parse the factor verification URL. {e}"
                     )
 
                 if not state_token:
