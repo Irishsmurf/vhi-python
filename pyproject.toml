@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vhi-python"
-version = "0.1.3"
+version = "0.1.4"
 description = "A Python client library for the Vhi API, handling authentication, MFA callbacks, claims retrieval, and document downloads."
 readme = "README.md"
 authors = [
