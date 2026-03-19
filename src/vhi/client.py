@@ -64,41 +64,48 @@ class VhiClient:
         
         payload = {
             "username": self.username,
-            "password": self.password
+            "usercred": self.password
         }
         
         # 1. Primary Authentication
-        # The path here is a presumed standard, will likely be updated if the actual path varies
-        login_url = f"{self.apis_base_url}/auth/v1/login"
+        login_url = f"{self.apis_base_url}/api/myvhilogin/login"
         
         response = self.session.post(login_url, json=payload, headers=headers)
         
         if response.status_code == 200:
-            self.is_authenticated = True
-            return
-            
-        elif response.status_code == 202:
-            # MFA Challenge Required
             try:
                 data = response.json()
             except ValueError:
-                raise VhiApiError("MFA response was not valid JSON", status_code=response.status_code)
+                raise VhiApiError("Login response was not valid JSON", status_code=response.status_code)
                 
-            if data.get("mfa_required"):
-                state_token = data.get("state_token")
+            # The HAR trace uses a deeply nested response structure or a flattened one depending on Gateway
+            status_val = data.get("status") or data.get("data", {}).get("status")
+            
+            if status_val == "MFA_REQUIRED":
+                state_token = data.get("stateToken") or data.get("data", {}).get("stateToken")
+                
+                # Attempt to extract the verify url from the first factor
+                try:
+                    factors = data.get("factors") or data.get("data", {}).get("_embedded", {}).get("factors", [])
+                    verify_url = factors[0]["_links"]["verify"]["href"]
+                except (IndexError, KeyError):
+                    # Fallback URL if extraction fails
+                    verify_url = f"https://admin-digital.vhi.ie/api/v1/authn/factors/verify"
+                    
                 if not state_token:
                     raise VhiApiError("MFA required but no state_token provided in response")
                     
-                self._handle_mfa_challenge(state_token, headers)
+                self._handle_mfa_challenge(state_token, verify_url, headers)
             else:
-                raise VhiApiError("Received 202 but not MFA challenge", status_code=response.status_code, response=response)
+                self.is_authenticated = True
+                return
                 
         elif response.status_code == 401:
             raise VhiAuthenticationError("Invalid credentials provided.")
         else:
             raise VhiApiError(f"Login failed with status {response.status_code}", status_code=response.status_code, response=response)
             
-    def _handle_mfa_challenge(self, state_token: str, base_headers: dict):
+    def _handle_mfa_challenge(self, state_token: str, verify_url: str, base_headers: dict):
         """
         Internal method to submit the MFA code.
         """
@@ -111,13 +118,12 @@ class VhiClient:
         if not otp_code:
             raise VhiAuthenticationError("MFA callback did not return a valid OTP code.")
             
-        mfa_url = f"{self.apis_base_url}/auth/v1/mfa/verify"
         payload = {
-            "otp": otp_code,
-            "state_token": state_token
+            "passCode": otp_code,
+            "stateToken": state_token
         }
         
-        response = self.session.post(mfa_url, json=payload, headers=base_headers)
+        response = self.session.post(verify_url, json=payload, headers=base_headers)
         
         if response.status_code == 200:
             self.is_authenticated = True

@@ -11,8 +11,8 @@ def test_login_success_no_mfa():
     
     responses.add(
         responses.POST,
-        "https://apis.vhi.ie/auth/v1/login",
-        json={"token": "test-token"},
+        "https://apis.vhi.ie/api/myvhilogin/login",
+        json={"status": "SUCCESS", "sessionToken": "test-token"},
         status=200
     )
     
@@ -26,19 +26,23 @@ def test_login_requires_mfa_success():
         
     client = VhiClient("test@example.com", "password", mfa_callback=mfa_callback)
     
-    # Mock primary login returning 202
+    # Mock primary login returning 200 with MFA_REQUIRED
     responses.add(
         responses.POST,
-        "https://apis.vhi.ie/auth/v1/login",
-        json={"mfa_required": True, "state_token": "state-123"},
-        status=202
+        "https://apis.vhi.ie/api/myvhilogin/login",
+        json={
+            "status": "MFA_REQUIRED", 
+            "stateToken": "state-123",
+            "factors": [{"_links": {"verify": {"href": "https://admin-digital.vhi.ie/api/v1/authn/factors/verify"}}}]
+        },
+        status=200
     )
     
-    # Mock MFA verify returning 200
+    # Mock MFA verify returning 200 SUCCESS
     responses.add(
         responses.POST,
-        "https://apis.vhi.ie/auth/v1/mfa/verify",
-        json={"token": "final-token"},
+        "https://admin-digital.vhi.ie/api/v1/authn/factors/verify",
+        json={"status": "SUCCESS", "sessionToken": "final-token"},
         status=200
     )
     
@@ -51,7 +55,7 @@ def test_login_invalid_credentials():
     
     responses.add(
         responses.POST,
-        "https://apis.vhi.ie/auth/v1/login",
+        "https://apis.vhi.ie/api/myvhilogin/login",
         status=401
     )
     
