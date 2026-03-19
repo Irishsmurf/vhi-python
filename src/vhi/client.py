@@ -215,11 +215,13 @@ class VhiClient:
                 "MFA is required but no mfa_callback was provided to VhiClient."
             )
 
-        # 1. Trigger the SMS / challenge
-        trigger_payload = {"stateToken": state_token}
+        proxy_url = f"{self.apis_base_url}/api/myvhilogin/oktaapi"
+
+        # 1. Trigger the SMS / challenge via Proxy
+        trigger_payload = {"oktaStateToken": state_token, "oktaAPI": verify_url}
         trigger_raw_payload = json.dumps(trigger_payload, separators=(",", ":"))
         trigger_response = self.session.post(
-            verify_url, data=trigger_raw_payload, headers=base_headers
+            proxy_url, data=trigger_raw_payload, headers=base_headers
         )
 
         if trigger_response.status_code != 200:
@@ -235,17 +237,31 @@ class VhiClient:
                 "MFA callback did not return a valid OTP code."
             )
 
-        payload = {"passCode": otp_code, "stateToken": state_token}
+        # 2. Submit the OTP Code via Proxy
+        payload = {
+            "oktaStateToken": state_token,
+            "oktaAPI": verify_url,
+            "passCode": otp_code,
+        }
 
         raw_payload = json.dumps(payload, separators=(",", ":"))
-        response = self.session.post(verify_url, data=raw_payload, headers=base_headers)
+        response = self.session.post(proxy_url, data=raw_payload, headers=base_headers)
 
         if response.status_code == 200:
-            self.is_authenticated = True
-            self._save_session()
-            # The session cookie jar has now been populated with the authorized session
-            # Or we might need to extract a Bearer token. This implementation relies
-            # on cookies being correctly set via Set-Cookie headers by the API.
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
+
+            status_val = data.get("status") or data.get("data", {}).get("status")
+
+            if status_val == "SUCCESS" or "sessionToken" in data or "user" in data:
+                self.is_authenticated = True
+                self._save_session()
+            else:
+                raise VhiAuthenticationError(
+                    f"MFA verification failed. Unrecognized status in response: {response.text}"
+                )
         else:
             raise VhiAuthenticationError(
                 f"MFA verification failed. Status: {response.status_code} - {response.text}"

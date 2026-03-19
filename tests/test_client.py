@@ -53,7 +53,7 @@ def test_login_requires_mfa_success():
     # Mock MFA trigger returning 200 CHALLENGE
     responses.add(
         responses.POST,
-        "https://admin-digital.vhi.ie/api/v1/authn/factors/verify",
+        "https://apis.vhi.ie/api/myvhilogin/oktaapi",
         json={"status": "MFA_CHALLENGE"},
         status=200,
     )
@@ -61,7 +61,7 @@ def test_login_requires_mfa_success():
     # Mock MFA verify returning 200 SUCCESS
     responses.add(
         responses.POST,
-        "https://admin-digital.vhi.ie/api/v1/authn/factors/verify",
+        "https://apis.vhi.ie/api/myvhilogin/oktaapi",
         json={"status": "SUCCESS", "sessionToken": "final-token"},
         status=200,
     )
